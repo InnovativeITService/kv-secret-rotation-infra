@@ -10,5 +10,7 @@ rotation_storage_accounts = {
   }
 }
 
+alert_email = "sri@test.com"
+
 # Turn on after the function code is deployed
 create_remediation = true

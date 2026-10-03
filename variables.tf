@@ -60,15 +60,17 @@ variable "rotation_storage_accounts" {
   type = map(object({
     resource_group_name = string
     subscription_id     = optional(string)
-    reader              = optional(bool, true)
   }))
   description = <<-EOT
     Storage accounts the function issues SAS tokens for, keyed by account name.
     subscription_id defaults to the subscription deployed into; set it for accounts elsewhere.
-    reader grants Reader so the function can look up the resource group; set it to
-    false if every secret for that account has a storage_rg tag.
   EOT
   default     = {}
+}
+
+variable "alert_email" {
+  type        = string
+  description = "Email address the alerts in alerts.tf are sent to."
 }
 
 variable "policy_effect" {

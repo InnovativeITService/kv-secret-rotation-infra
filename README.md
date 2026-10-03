@@ -8,6 +8,8 @@ Infrastructure for the Key Vault secret rotation function (`../kv-secret-rotatio
 |---|---|
 | `main.tf` | Resource group, user-assigned identity, storage account (host, `app-package`, `eventgrid-deadletter`), Log Analytics, App Insights, Flex Consumption plan and function app |
 | `permissions.tf` | Roles for the function's identity |
+| `roles.tf` | Custom roles with only the actions needed, used instead of broader built-in roles |
+| `alerts.tf` | Email action group and the three alerts |
 | `policy_assigment_rg.tf` | Policy definition, assignment to one resource group (`bigwx-rg-sri`), roles for the policy identity, optional remediation. **This is the one in use.** |
 | `policy_assignment_sub.tf` | The same policy assigned to each subscription in `policy_subscription_ids` (empty by default, so it creates nothing), with the policy roles and remediation per subscription. Subscriptions other than the deployment one need `policy_definition_management_group_id`, because a definition kept in a subscription can only be assigned there. Don't cover the same vaults with both files. |
 | `policy/deploy-kv-events.json` | ARM template the policy deploys for each Key Vault |
@@ -25,12 +27,11 @@ Function identity:
 | Storage Blob Data Owner | function storage account | Host storage and deployment package |
 | Key Vault Secrets Officer | each vault the policy connects, added by the policy | Read and write secrets in RBAC-mode vaults |
 | Access policy `get`, `set` on secrets | each vault the policy connects, added by the policy | Same, for access-policy vaults |
-| Storage Account Key Operator Service Role | each account in `rotation_storage_accounts` | List keys to sign SAS |
+| `<prefix> SAS signer` (custom) | each account in `rotation_storage_accounts` | Read the account and list its keys, to sign SAS and look up the resource group. Cannot regenerate keys or change the account |
 
 The function has no Key Vault access of its own: it can only reach vaults the policy has
 connected, which are the only vaults that send it events. Each vault gets both the role and the
 access policy; the vault uses whichever matches its access model and ignores the other.
-| Reader | same, unless `reader = false` | Look up the resource group when a secret has no `storage_rg` tag |
 
 Policy assignment identity:
 
@@ -38,8 +39,8 @@ Policy assignment identity:
 |---|---|---|
 | EventGrid Contributor | policy scope (`bigwx-rg-sri`) | Create event subscriptions, run deployments |
 | Key Vault Contributor | policy scope | Read vaults, add the access policy |
-| Website Contributor | function app | Use the function as an Event Grid endpoint |
-| Storage Account Contributor | function storage account | Event Grid checks `storageAccounts/write` on the dead-letter account when creating a subscription |
+| `<prefix> Event Grid function endpoint` (custom) | function app | Event Grid reads the app and its keys to use the function as an endpoint. Cannot change the app or deploy code |
+| `<prefix> Event Grid dead-letter destination` (custom) | function storage account | Event Grid checks `storageAccounts/write` on the dead-letter account when creating a subscription. Cannot list keys or read data |
 | Role Based Access Control Administrator, **constrained** | policy scope | Give the function Key Vault Secrets Officer on each vault. A condition limits it to assigning (or removing) exactly that role, to exactly the function's identity |
 
 Whoever runs `terraform apply` needs Owner or User Access Administrator on the subscription to
@@ -103,6 +104,21 @@ az policy state list -g bigwx-rg-sri \
 az policy remediation deployment list -g bigwx-rg-sri -n kvrot-sri-kv-events -o table
 ```
 
+## Alerts
+
+`alerts.tf` emails `alert_email` (from `terraform.tfvars`) through the action group
+`<prefix>-alerts`. Each alert is a query on the function's App Insights, checked every 15 minutes:
+
+| Alert | Fires when | Severity |
+|---|---|---|
+| `<prefix>-function-errors` | `kv_secret_expiry` throws (Event Grid then retries) | 1 |
+| `<prefix>-dead-lettered` | `deadletter_check` finds an event Event Grid gave up on: the secret was not rotated | 1 |
+| `<prefix>-manual-rotation` | a secret couldn't be rotated automatically (`Cannot rotate …`) | 2 |
+
+Event Grid's own delivery metrics are on each vault's system topic, which Event Grid creates,
+so they aren't alerted on directly. An event that keeps failing to deliver ends up dead-lettered
+after 24 hours and is caught by the dead-letter alert.
+
 ## Notes
 
 - **`AzureWebJobsStorage = ""` in `app_settings`** works around an azurerm provider bug
@@ -112,6 +128,11 @@ az policy remediation deployment list -g bigwx-rg-sri -n kvrot-sri-kv-events -o 
   it makes the host use the `AzureWebJobsStorage__*` identity settings. Every `plan` shows
   `+ AzureWebJobsStorage = ""`; that's expected. Don't add `ignore_changes` for it, or the next
   update writes the broken string back. Remove the line once the provider is fixed.
+- **`webdeploy_publish_basic_authentication_enabled = false`** turns off publish-profile
+  (username/password) deployments to the SCM site. Deploy with an Entra ID sign-in instead:
+  `func azure functionapp publish`, `az functionapp deployment`, or Terraform. FTP basic auth is
+  also off; the Flex resource has no setting for it, and Flex doesn't support FTP deployment.
+  Pipelines must use a service connection or OIDC, not a publish profile.
 - **`https_only = true`** is required by the `Secure-Cloud-Guardrails-Cyber` policy ("Function
   apps should only be accessible over HTTPS"); without it, creating the app is denied.
 - **Jira:** the `JIRA_WEBHOOK_URL` / `JIRA_WEBHOOK_TOKEN` app settings and the `jira_*`

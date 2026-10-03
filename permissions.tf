@@ -61,22 +61,13 @@ locals {
   }
 }
 
-# Sign SAS tokens with the account key
-resource "azurerm_role_assignment" "function_storage_key_operator" {
+# Sign SAS tokens with the account key, and look up the account's resource group when a secret
+# has no storage_rg tag (custom role in roles.tf)
+resource "azurerm_role_assignment" "function_sas_signer" {
   for_each = var.rotation_storage_accounts
 
-  scope                = local.rotation_storage_account_ids[each.key]
-  role_definition_name = "Storage Account Key Operator Service Role"
-  principal_id         = azurerm_user_assigned_identity.function.principal_id
-  principal_type       = "ServicePrincipal"
-}
-
-# Look up the resource group of an account when a secret has no storage_rg tag
-resource "azurerm_role_assignment" "function_storage_reader" {
-  for_each = { for name, account in var.rotation_storage_accounts : name => account if account.reader }
-
-  scope                = local.rotation_storage_account_ids[each.key]
-  role_definition_name = "Reader"
-  principal_id         = azurerm_user_assigned_identity.function.principal_id
-  principal_type       = "ServicePrincipal"
+  scope              = local.rotation_storage_account_ids[each.key]
+  role_definition_id = azurerm_role_definition.function_sas_signer.role_definition_resource_id
+  principal_id       = azurerm_user_assigned_identity.function.principal_id
+  principal_type     = "ServicePrincipal"
 }

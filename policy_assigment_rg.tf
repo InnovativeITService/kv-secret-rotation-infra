@@ -8,8 +8,6 @@ locals {
   policy_roles = {
     eventgrid_contributor = "1e241071-0855-49ea-94dc-649edcd759de" # system topics and subscriptions, deployments
     keyvault_contributor  = "f25e0fa2-a7c8-4377-a976-54943a77a395" # read vaults, add access policies
-    website_contributor   = "de139f84-1756-47ae-9be6-808fbbe84772" # use the function as an Event Grid endpoint
-    storage_contributor   = "17d1049b-9a84-46fb-8f53-869881c3d3ab" # use the storage account as the dead-letter destination
     rbac_admin            = "f58310d9-a9f6-439a-9e8d-f62e7b41a168" # give the function Key Vault Secrets Officer on each vault (constrained)
   }
 }
@@ -63,7 +61,11 @@ resource "azurerm_policy_definition" "kv_events" {
             },
           ]
         }
-        roleDefinitionIds = [for id in values(local.policy_roles) : "/providers/Microsoft.Authorization/roleDefinitions/${id}"]
+        roleDefinitionIds = concat(
+          [for id in values(local.policy_roles) : "/providers/Microsoft.Authorization/roleDefinitions/${id}"],
+          # Custom roles in roles.tf: use the function as an endpoint, use the dead-letter storage
+          [azurerm_role_definition.policy_function_endpoint.role_definition_resource_id, azurerm_role_definition.policy_deadletter_writer.role_definition_resource_id],
+        )
         deployment = {
           properties = {
             mode     = "incremental"
@@ -132,7 +134,7 @@ resource "azurerm_role_assignment" "policy_keyvault" {
 
 resource "azurerm_role_assignment" "policy_function" {
   scope              = azurerm_function_app_flex_consumption.main.id
-  role_definition_id = "${data.azurerm_subscription.current.id}/providers/Microsoft.Authorization/roleDefinitions/${local.policy_roles.website_contributor}"
+  role_definition_id = azurerm_role_definition.policy_function_endpoint.role_definition_resource_id
   principal_id       = azurerm_resource_group_policy_assignment.kv_events.identity[0].principal_id
   principal_type     = "ServicePrincipal"
 }
@@ -140,7 +142,7 @@ resource "azurerm_role_assignment" "policy_function" {
 # Event Grid checks storageAccounts/write on the dead-letter account when creating the subscription
 resource "azurerm_role_assignment" "policy_deadletter" {
   scope              = azurerm_storage_account.main.id
-  role_definition_id = "${data.azurerm_subscription.current.id}/providers/Microsoft.Authorization/roleDefinitions/${local.policy_roles.storage_contributor}"
+  role_definition_id = azurerm_role_definition.policy_deadletter_writer.role_definition_resource_id
   principal_id       = azurerm_resource_group_policy_assignment.kv_events.identity[0].principal_id
   principal_type     = "ServicePrincipal"
 }

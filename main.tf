@@ -69,6 +69,10 @@ resource "azurerm_function_app_flex_consumption" "main" {
   service_plan_id     = azurerm_service_plan.main.id
   https_only          = true
 
+  # No publish-profile (username/password) deployments; deploy with an Entra ID sign-in
+  # (func azure functionapp publish, az functionapp deployment, Terraform)
+  webdeploy_publish_basic_authentication_enabled = false
+
   runtime_name           = "python"
   runtime_version        = var.python_version
   maximum_instance_count = 40
@@ -88,6 +92,10 @@ resource "azurerm_function_app_flex_consumption" "main" {
     # DefaultAzureCredential picks the user-assigned identity from this
     AZURE_CLIENT_ID       = azurerm_user_assigned_identity.function.client_id
     AZURE_SUBSCRIPTION_ID = var.subscription_id
+
+    # Where Event Grid dead-letters undeliverable events; deadletter_check reports them
+    DEADLETTER_ACCOUNT_URL = azurerm_storage_account.main.primary_blob_endpoint
+    DEADLETTER_CONTAINER   = azurerm_storage_container.deadletter.name
 
     # Jira tickets for rotations, disabled while testing rotation; uncomment with the
     # jira_* variables in variables.tf to raise tickets again
