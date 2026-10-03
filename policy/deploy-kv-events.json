@@ -1,0 +1,83 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "vaultName": { "type": "string" },
+    "functionResourceId": { "type": "string" },
+    "functionPrincipalId": { "type": "string" },
+    "tenantId": { "type": "string" },
+    "deadLetterStorageAccountId": { "type": "string" },
+    "deadLetterContainerName": { "type": "string" },
+    "includedEventTypes": { "type": "array" },
+    "eventSubscriptionName": { "type": "string" },
+    "templateVersionLabel": { "type": "string" }
+  },
+  "variables": {
+    "vaultId": "[resourceId('Microsoft.KeyVault/vaults', parameters('vaultName'))]",
+    "secretsOfficerRoleId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b86a8fe4-44ce-4948-aee5-eccb2c155cd7')]"
+  },
+  "resources": [
+    {
+      "comments": "Created on the vault rather than on a named system topic: Event Grid attaches it to the vault's existing system topic, whatever it is called, or creates one if there is none.",
+      "type": "Microsoft.EventGrid/eventSubscriptions",
+      "apiVersion": "2022-06-15",
+      "scope": "[variables('vaultId')]",
+      "name": "[parameters('eventSubscriptionName')]",
+      "properties": {
+        "labels": ["[parameters('templateVersionLabel')]"],
+        "destination": {
+          "endpointType": "AzureFunction",
+          "properties": {
+            "resourceId": "[parameters('functionResourceId')]",
+            "maxEventsPerBatch": 1,
+            "preferredBatchSizeInKilobytes": 64
+          }
+        },
+        "filter": {
+          "includedEventTypes": "[parameters('includedEventTypes')]"
+        },
+        "eventDeliverySchema": "EventGridSchema",
+        "retryPolicy": {
+          "maxDeliveryAttempts": 30,
+          "eventTimeToLiveInMinutes": 1440
+        },
+        "deadLetterDestination": {
+          "endpointType": "StorageBlob",
+          "properties": {
+            "resourceId": "[parameters('deadLetterStorageAccountId')]",
+            "blobContainerName": "[parameters('deadLetterContainerName')]"
+          }
+        }
+      }
+    },
+    {
+      "comments": "Lets the function read and write secrets in access-policy vaults. Ignored by RBAC-mode vaults.",
+      "type": "Microsoft.KeyVault/vaults/accessPolicies",
+      "apiVersion": "2023-07-01",
+      "name": "[concat(parameters('vaultName'), '/add')]",
+      "properties": {
+        "accessPolicies": [
+          {
+            "tenantId": "[parameters('tenantId')]",
+            "objectId": "[parameters('functionPrincipalId')]",
+            "permissions": {
+              "secrets": ["get", "set"]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "comments": "Lets the function read and write secrets in RBAC-mode vaults, on this vault only. Ignored by access-policy vaults.",
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[variables('vaultId')]",
+      "name": "[guid(variables('vaultId'), parameters('functionPrincipalId'), variables('secretsOfficerRoleId'))]",
+      "properties": {
+        "roleDefinitionId": "[variables('secretsOfficerRoleId')]",
+        "principalId": "[parameters('functionPrincipalId')]",
+        "principalType": "ServicePrincipal"
+      }
+    }
+  ]
+}
