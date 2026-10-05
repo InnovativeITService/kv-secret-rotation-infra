@@ -4,11 +4,9 @@ resource_group_name  = "bigwx-rg-kvrot-sri"
 name_prefix          = "kvrot-sri"
 storage_account_name = "bigwxkvrotsri"
 
-rotation_storage_accounts = {
-  bigwxrgsrib6ac = {
-    resource_group_name = "bigwx-rg-sri"
-  }
-}
+# Storage accounts in bigwx-rg-sri (the policy's scope) are covered automatically. List only
+# accounts outside it here.
+rotation_storage_accounts = {}
 
 alert_email = "sri@test.com"
 

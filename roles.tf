@@ -1,7 +1,8 @@
 # Custom roles with only the actions needed, in place of broader built-in roles.
 
-# Function identity, on each storage account it signs SAS tokens for. Replaces Storage Account
-# Key Operator Service Role (which can also regenerate keys) and Reader.
+# Function identity, on the policy's scope (every storage account in it) and on any extra
+# accounts in rotation_storage_accounts. Replaces Storage Account Key Operator Service Role
+# (which can also regenerate keys) and Reader.
 resource "azurerm_role_definition" "function_sas_signer" {
   name        = "${var.name_prefix} SAS signer"
   scope       = data.azurerm_subscription.current.id
@@ -16,6 +17,7 @@ resource "azurerm_role_definition" "function_sas_signer" {
 
   assignable_scopes = distinct(concat(
     [data.azurerm_subscription.current.id],
+    [for id in var.policy_subscription_ids : "/subscriptions/${id}"],
     [for account in var.rotation_storage_accounts : "/subscriptions/${coalesce(account.subscription_id, data.azurerm_subscription.current.subscription_id)}"],
   ))
 }

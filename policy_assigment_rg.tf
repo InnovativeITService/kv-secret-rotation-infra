@@ -147,6 +147,15 @@ resource "azurerm_role_assignment" "policy_deadletter" {
   principal_type     = "ServicePrincipal"
 }
 
+# The function can sign SAS tokens for every storage account in the policy's resource group,
+# including accounts created later, without listing them (custom role in roles.tf)
+resource "azurerm_role_assignment" "function_sas_signer_rg" {
+  scope              = data.azurerm_resource_group.policy_scope.id
+  role_definition_id = azurerm_role_definition.function_sas_signer.role_definition_resource_id
+  principal_id       = azurerm_user_assigned_identity.function.principal_id
+  principal_type     = "ServicePrincipal"
+}
+
 # Lets the deployment give the function Key Vault Secrets Officer on each RBAC-mode vault. The
 # condition limits it to exactly that role for exactly that identity.
 resource "azurerm_role_assignment" "policy_rbac_admin" {

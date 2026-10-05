@@ -62,8 +62,9 @@ variable "rotation_storage_accounts" {
     subscription_id     = optional(string)
   }))
   description = <<-EOT
-    Storage accounts the function issues SAS tokens for, keyed by account name.
-    subscription_id defaults to the subscription deployed into; set it for accounts elsewhere.
+    Extra storage accounts the function issues SAS tokens for, keyed by account name, that are
+    outside the policy's scope. Accounts in the policy's resource group or subscriptions are
+    covered automatically. subscription_id defaults to the subscription deployed into.
   EOT
   default     = {}
 }

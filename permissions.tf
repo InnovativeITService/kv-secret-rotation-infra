@@ -61,8 +61,8 @@ locals {
   }
 }
 
-# Sign SAS tokens with the account key, and look up the account's resource group when a secret
-# has no storage_rg tag (custom role in roles.tf)
+# Storage accounts outside the policy's scope. Accounts inside it are covered by the role on the
+# whole scope (function_sas_signer_rg / function_sas_signer_sub in the policy files).
 resource "azurerm_role_assignment" "function_sas_signer" {
   for_each = var.rotation_storage_accounts
 
